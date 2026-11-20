@@ -1,61 +1,43 @@
 #!/usr/bin/env python3
-"""News front page for Friday 20 November 2026.
+"""Draw a newspaper front page summing up the world's news of
+Friday 20 November 2026 and write it to /output/entry.png.
 
-Draws a 1024x1024 newspaper front page summing up the day's world news
-and writes it to /output/entry.png.
-
-Deterministic: all text, layout and colours are fixed in this file. No
-network, no clock, no randomness, no system fonts (the DejaVu fonts the
-page uses are bundled in fonts/ next to this script, so the program renders
-identically wherever it runs).
-
-Stories (as reported on 20 November 2026 by Reuters, AFP, The Guardian,
-AP, SPA and the day's news briefs):
-  1. A Houthi missile damages Riyadh's PIF Tower, the tallest tower in
-     the capital's financial district; windows blown out across seven
-     floors, no injuries reported.
-  2. COP31's slimmed-down draft drops all fossil-fuel phase-out language
-     and keeps a 35% electrification target for 2035; Panama threatens
-     to block consensus as talks end Friday.
-  3. Israeli forces cross the Yellow Line in central Gaza, the first
-     incursion across the ceasefire boundary since the truce.
-  4. Asian markets plunge Friday on AI-valuation fears; the Nikkei falls
-     4.8%, and the S&P 500 logs a fifth straight daily loss on Thursday.
-  5. Kenya discharges its last Ebola patient, 37 days after the first
-     case of the outbreak.
-  6. The UK pledges more than 1,000 drones for Ukraine in a 260-million-
-     pound package.
+Deterministic: no network, no clock, no randomness. Every run writes
+byte-identical output. Python 3.13, Pillow. The three DejaVu fonts the
+page uses are bundled in fonts/ next to this file.
 """
 
 import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-PAPER = (248, 244, 232)
-INK = (17, 17, 17)
-RED = (163, 30, 34)
-GREY = (90, 86, 78)
-
 HERE = os.path.dirname(os.path.abspath(__file__))
-FONT_DIR = os.path.join(HERE, "fonts")
+FONTS = os.path.join(HERE, "fonts")
+OUT = "/output/entry.png"
+
+W, H = 1024, 1024
+MARGIN = 48
+INK = (0, 0, 0)
+PAPER = (255, 255, 255)
+GREY = (90, 90, 90)
 
 
 def font(name, size):
-    return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
+    return ImageFont.truetype(os.path.join(FONTS, name), size)
 
 
-SERIF_B = "DejaVuSerif-Bold.ttf"
-SANS = "DejaVuSans.ttf"
-SANS_B = "DejaVuSans-Bold.ttf"
+SERIF_BOLD = lambda s: font("DejaVuSerif-Bold.ttf", s)
+SANS = lambda s: font("DejaVuSans.ttf", s)
+SANS_BOLD = lambda s: font("DejaVuSans-Bold.ttf", s)
 
 
-def wrap(draw, text, fnt, max_width):
-    """Greedy word wrap; returns a list of lines that fit max_width."""
+def wrap(text, fnt, width):
+    """Split text into lines that fit width, measured with fnt."""
+    words = text.split()
     lines, cur = [], ""
-    for word in text.split():
+    for word in words:
         trial = word if not cur else cur + " " + word
-        if draw.textlength(trial, font=fnt) <= max_width:
+        if fnt.getlength(trial) <= width:
             cur = trial
         else:
             if cur:
@@ -66,124 +48,133 @@ def wrap(draw, text, fnt, max_width):
     return lines
 
 
-def block(draw, x, y, width, kicker, headline, deck, hsize, dsize,
-          align="left", hspace=4, dspace=3):
-    """Draw one story block; returns the y just below it."""
-    fk = font(SANS_B, 20)
-    fh = font(SERIF_B, hsize)
-    fd = font(SANS, dsize)
+def draw_centered(draw, y, text, fnt, fill=INK):
+    draw.text((W // 2, y), text, font=fnt, fill=fill, anchor="mt")
+
+
+def draw_block(draw, x, y, width, kicker, headline, deck,
+               head_font, deck_font, head_leading=1.12, deck_leading=1.35):
+    """A story block: kicker, headline, deck. Returns the y below it."""
     if kicker:
-        draw.text((x, y), kicker, font=fk, fill=RED)
-        y += 30
-    lines = wrap(draw, headline, fh, width)
-    for ln in lines:
-        lx = x if align == "left" else x + (width - draw.textlength(ln, font=fh)) // 2
-        draw.text((lx, y), ln, font=fh, fill=INK)
-        y += hsize + hspace
-    if deck:
-        y += 2
-        for ln in wrap(draw, deck, fd, width):
-            lx = x if align == "left" else x + (width - draw.textlength(ln, font=fd)) // 2
-            draw.text((lx, y), ln, font=fd, fill=INK)
-            y += dsize + dspace
+        draw.text((x, y), kicker, font=SANS_BOLD(17), fill=INK)
+        y += 26
+    for line in wrap(headline, head_font, width):
+        draw.text((x, y), line, font=head_font, fill=INK)
+        y += int(head_font.size * head_leading)
+    y += 4
+    for line in wrap(deck, deck_font, width):
+        draw.text((x, y), line, font=deck_font, fill=GREY)
+        y += int(deck_font.size * deck_leading)
     return y
 
 
-def rule(draw, x, y, width, thick=2):
-    draw.rectangle([x, y, x + width, y + thick - 1], fill=INK)
+def rule(draw, y, width=3, x0=None, x1=None):
+    x0 = MARGIN if x0 is None else x0
+    x1 = W - MARGIN if x1 is None else x1
+    draw.line([(x0, y), (x1, y)], fill=INK, width=width)
+    return y + width
 
 
 def main():
     img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
+    draw = ImageDraw.Draw(img)
 
-    # Double border frame.
-    d.rectangle([14, 14, W - 15, H - 15], outline=INK, width=3)
-    d.rectangle([24, 24, W - 25, H - 25], outline=INK, width=1)
-
-    x, cw = 44, W - 88  # content x and width
+    y = 40
+    # Thin double rule above the masthead.
+    y = rule(draw, y, 2)
+    y += 6
+    y = rule(draw, y, 1)
+    y += 14
 
     # Masthead.
-    fm = font(SERIF_B, 96)
-    title = "THE WORLD"
-    d.text(((W - d.textlength(title, font=fm)) // 2, 30), title,
-           font=fm, fill=INK)
-    rule(d, x, 148, cw, 2)
-    fd_line = font(SANS_B, 27)
-    date = "FRIDAY, 20 NOVEMBER 2026"
-    d.text(((W - d.textlength(date, font=fd_line)) // 2, 158), date,
-           font=fd_line, fill=INK)
-    rule(d, x, 200, cw, 5)
-    rule(d, x, 208, cw, 1)
+    draw_centered(draw, y, "THE WORLD", SERIF_BOLD(96))
+    y += 118
+    draw_centered(draw, y, "FRIDAY, 20 NOVEMBER 2026", SANS(22))
+    y += 36
+    y = rule(draw, y, 4)
+    y += 28
 
-    # Lead story: Houthi missile hits Riyadh's PIF Tower.
-    y = block(d, x, 224, cw,
-              "CONFLICT  —  RIYADH",
-              "HOUTHI MISSILE HITS RIYADH TOWER",
-              "The PIF Tower, headquarters of the Saudi sovereign wealth "
-              "fund, is damaged as windows blow out across seven floors; "
-              "no injuries are reported.",
-              54, 22, align="center")
-    rule(d, x, y + 10, cw, 2)
+    content_w = W - 2 * MARGIN
 
-    # Row two: climate | Gaza.
-    col_w = (cw - 24) // 2
-    y2 = y + 26
-    left_end = block(d, x, y2, col_w,
-                     "CLIMATE  —  ANTALYA",
-                     "COP31 DRAFT DROPS FOSSIL-FUEL PHASE-OUT",
-                     "The slimmed-down draft removes all fossil-fuel "
-                     "language and keeps a 35% electrification target for "
-                     "2035; Panama threatens to block consensus.",
-                     34, 20)
-    right_end = block(d, x + col_w + 24, y2, col_w,
-                      "CONFLICT  —  GAZA",
-                      "ISRAELI FORCES CROSS GAZA'S YELLOW LINE",
-                      "First incursion across the ceasefire boundary in "
-                      "central Gaza since the truce.",
-                      34, 20)
-    y3 = max(left_end, right_end)
-    d.line([x + col_w + 12, y2, x + col_w + 12, y3 - 6], fill=GREY, width=1)
-    rule(d, x, y3 + 8, cw, 2)
+    # Lead story, full width.
+    y = draw_block(
+        draw, MARGIN, y, content_w,
+        "RIYADH",
+        "Houthi missile hits Riyadh's PIF Tower",
+        "Windows blown out across seven floors of the Saudi sovereign "
+        "wealth fund's headquarters; no injuries reported.",
+        SERIF_BOLD(46), SANS(22),
+    )
+    y += 18
+    y = rule(draw, y, 2)
+    y += 22
 
-    # Row three: markets | health | Ukraine.
-    c3 = (cw - 48) // 3
-    y4 = y3 + 24
-    ends = []
-    ends.append(block(d, x, y4, c3,
-                      "MARKETS",
-                      "ASIAN MARKETS PLUNGE ON AI FEARS",
-                      "The Nikkei falls 4.8% on Friday; the S&P 500 logs a "
-                      "fifth straight loss on Thursday.",
-                      27, 19))
-    ends.append(block(d, x + c3 + 24, y4, c3,
-                      "HEALTH",
-                      "KENYA'S LAST EBOLA PATIENT GOES HOME",
-                      "Discharged 37 days after the outbreak's first case.",
-                      27, 19))
-    ends.append(block(d, x + 2 * (c3 + 24), y4, c3,
-                      "UKRAINE",
-                      "UK PLEDGES 1,000 DRONES FOR UKRAINE",
-                      "A 260-million-pound package of long-range drones "
-                      "and other capabilities.",
-                      27, 19))
-    y5 = max(ends)
-    for gx in (x + c3 + 12, x + 2 * c3 + 36):
-        d.line([gx, y4, gx, y5 - 6], fill=GREY, width=1)
-    rule(d, x, y5 + 12, cw, 2)
+    # Middle stories in two columns.
+    col_w = (content_w - 32) // 2
+    left_x, right_x = MARGIN, MARGIN + col_w + 32
+    left_y = draw_block(
+        draw, left_x, y, col_w,
+        "CLIMATE  ·  ANTALYA",
+        "COP31 draft drops fossil-fuel phase-out",
+        "The slimmed-down draft removes all fossil-fuel language and "
+        "keeps a 35% electrification target for 2035; Panama threatens "
+        "to block consensus.",
+        SERIF_BOLD(26), SANS(18),
+    )
+    right_y = draw_block(
+        draw, right_x, y, col_w,
+        "GAZA",
+        "Israeli forces cross Gaza's Yellow Line",
+        "First incursion across the ceasefire boundary in central Gaza "
+        "since the truce.",
+        SERIF_BOLD(26), SANS(18),
+    )
+    y = max(left_y, right_y) + 10
+    y = rule(draw, y, 1, x0=left_x, x1=left_x + col_w)
+    y = rule(draw, y, 1, x0=right_x, x1=right_x + col_w)
+    y += 16
 
-    # Footer.
-    ff = font(SANS_B, 18)
-    foot = "SIX TOP STORIES  ·  FRIDAY 20 NOVEMBER 2026  ·  THE WORLD"
-    d.text(((W - d.textlength(foot, font=ff)) // 2, y5 + 22), foot,
-           font=ff, fill=GREY)
-    fs = font(SANS, 15)
-    src = "Sources: Reuters  ·  AFP  ·  The Guardian  ·  AP  ·  SPA"
-    d.text(((W - d.textlength(src, font=fs)) // 2, y5 + 48), src,
-           font=fs, fill=GREY)
+    left_y = draw_block(
+        draw, left_x, y, col_w,
+        "MARKETS",
+        "Asian markets plunge on AI fears",
+        "The Nikkei falls 4.8% on Friday; the S&P 500 logs a fifth "
+        "straight daily loss on Thursday.",
+        SERIF_BOLD(26), SANS(18),
+    )
+    right_y = draw_block(
+        draw, right_x, y, col_w,
+        "NAIROBI",
+        "Kenya discharges its last Ebola patient",
+        "Thirty-seven days after the outbreak's first case.",
+        SERIF_BOLD(26), SANS(18),
+    )
+    y = max(left_y, right_y) + 14
+    y = rule(draw, y, 2)
+    y += 18
 
-    os.makedirs("/output", exist_ok=True)
-    img.save("/output/entry.png", format="PNG")
+    # Bottom band story, full width.
+    y = draw_block(
+        draw, MARGIN, y, content_w,
+        "LONDON",
+        "UK pledges 1,000 drones for Ukraine",
+        "A £260 million package of long-range drones and other "
+        "capabilities.",
+        SERIF_BOLD(30), SANS(19),
+    )
+    y += 16
+    y = rule(draw, y, 1)
+    y += 14
+
+    # Source credit.
+    draw_centered(
+        draw, y,
+        "Sources: Reuters  ·  AFP  ·  The Guardian  ·  AP  ·  SPA",
+        SANS(16), fill=GREY,
+    )
+
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    img.save(OUT, format="PNG")
 
 
 if __name__ == "__main__":
